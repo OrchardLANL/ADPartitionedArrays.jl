@@ -1,0 +1,8 @@
+name = "ADPartitionedArrays"
+uuid = "85689036-c56b-480f-9640-f8b728d853c0"
+authors = ["Daniel O'Malley <omalled@lanl.gov>"]
+version = "0.1.0"
+
+[deps]
+MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+PartitionedArrays = "5a9dfac6-5c52-46f7-8278-5e2210713be9"
