@@ -1,7 +1,6 @@
 using Test
 import ADPartitionedArrays
 import DPFEHM
-import GaussianRandomFields
 import HYPRE
 import MPI
 import PartitionedArrays
@@ -46,6 +45,13 @@ end
 	end
 end
 
+function pcg_bamg_solver(A, b; kwargs...)
+	precond = HYPRE.BoomerAMG()
+	solver = HYPRE.PCG(; Precond=precond, Tol=1e-8, MaxIter=10 ^ 3)
+	hfree = HYPRE.solve(solver, A, b)
+	return hfree
+end
+
 function bamg_solver(A, b; kwargs...)
 	solver = HYPRE.BoomerAMG(; PrintLevel=-1, Tol=1e-8, MaxIter=10 ^ 3, kwargs...)
 	hfree = HYPRE.solve(solver, A, b)
@@ -86,8 +92,7 @@ end
 
 #set up the grid
 mins = [0, 0, 0]; maxs = [50, 50, 5]#size of the domain, in meters
-ns = round.(Int, 2 ^ (9 / 3) * [50, 50, 5])#number of nodes on the grid
-#ns = [50, 50, 5]#number of nodes on the grid
+ns = round.(Int, 2 ^ (0 / 3) * [50, 50, 5])#number of nodes on the grid
 coords, neighbors, areasoverlengths, volumes = DPFEHM.regulargrid3d(mins, maxs, ns)#build the grid
 
 #set up the boundary conditions
@@ -96,38 +101,21 @@ dirichletnodes = Int[size(coords, 2)]#fix the pressure in the upper right corner
 dirichleths = zeros(size(coords, 2))
 dirichleths[size(coords, 2)] = 0.0
 
-#set up the conductivity field
-#println("geostats")
-#@time begin
-#	lambda = 50.0#meters -- correlation length of log-conductivity
-#	sigma = 1.0#standard deviation of log-conductivity
-#	mu = -9.0#mean of log conductivity -- ~1e-4 m/s, like clean sand here https://en.wikipedia.org/wiki/Hydraulic_conductivity#/media/File:Groundwater_Freeze_and_Cherry_1979_Table_2-2.png
-#	cov = GaussianRandomFields.CovarianceFunction(2, GaussianRandomFields.Matern(lambda, 1; σ=sigma))
-#	x_pts = range(mins[1], maxs[1]; length=ns[1])
-#	y_pts = range(mins[2], maxs[2]; length=ns[2])
-#	num_eigenvectors = 200
-#	grf = GaussianRandomFields.GaussianRandomField(cov, GaussianRandomFields.KarhunenLoeve(num_eigenvectors), x_pts, y_pts)
-#	logKs = zeros(reverse(ns)...)
-#	logKs2d = mu .+ GaussianRandomFields.sample(grf)'#generate a random realization of the log-conductivity field
-#	for i = 1:ns[3]#copy the 2d field to each of the 3d layers
-#		v = view(logKs, i, :, :)
-#		v .= logKs2d
-#	end
-#end
 ts = Float64[]
 for _ = 1:2
 	t = @elapsed begin
 		logKs = zeros(reverse(ns)...)
 		logKs2Ks_neighbors(Ks) = exp.(0.5 * (Ks[map(p->p[1], neighbors)] .+ Ks[map(p->p[2], neighbors)]))#convert from permeabilities at the nodes to permeabilities connecting the nodes
 		Ks_neighbors = logKs2Ks_neighbors(logKs)
-		h = gw_steadystate(Ks_neighbors, neighbors, areasoverlengths, dirichletnodes, dirichleths, Qs)
+			t_new = @elapsed h = gw_steadystate(Ks_neighbors, neighbors, areasoverlengths, dirichletnodes, dirichleths, Qs; solve_in_parallel=true, linear_solver=pcg_bamg_solver)
+			#=
+			t_old = @elapsed A = DPFEHM.groundwater_h(h, Ks_neighbors, neighbors, areasoverlengths, dirichletnodes, dirichleths, Qs, ones(length(Qs)), ones(length(Qs)))
+			t_old2 = @elapsed A \ randn(size(A, 1))
+			@show t_old + t_old2, t_new
+			=#
+			@show t_new
 	end
 	push!(ts, t)
-end
-
-
-if MPI.Comm_rank(MPI.COMM_WORLD) == 0
-	@show log10(prod(ns)), minimum(ts)
 end
 
 nothing
