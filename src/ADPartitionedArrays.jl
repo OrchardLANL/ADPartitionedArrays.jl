@@ -103,8 +103,18 @@ function equations(fundef::Expr, macroexpand_module, dont_differentiate_syms::Ar
 			J = Int[]
 			V = eltype($arg)[]
 			$body_jacobian
-			#return SparseArrays.sparse(I, J, V, numequations, length($arg_name), +)
 			return I, J, V
+		end
+		push!(q_result.args, :($(esc(MacroTools.combinedef(dict)))))
+		body_jacobian = MacroTools.postwalk(x->replacenumequations(x, :()), original_body)
+		body_jacobian = MacroTools.postwalk(x->replaceaddterm(x, (eqnum, term)->codegen_addterm_jacobian(eqnum, term, arg_name)), body_jacobian)
+		dict[:name] = Symbol(original_name, :_, arg_name, :_transpose)
+		dict[:body] = quote
+			I = Int[]
+			J = Int[]
+			V = eltype($arg)[]
+			$body_jacobian
+			return J, I, V
 		end
 		push!(q_result.args, :($(esc(MacroTools.combinedef(dict)))))
 	end
