@@ -85,7 +85,9 @@ function equations(fundef::Expr, macroexpand_module, dont_differentiate_syms::Ar
 	dict[:body] = quote
 		I = Int[]
 		V = Float64[]
-		$body_residuals
+		Base.sizehint!(I, 5 * length(row_indices))
+        Base.sizehint!(V, 5 * length(row_indices))
+        $body_residuals
 		return I, V
 	end
 	q_residuals = MacroTools.combinedef(dict)
